@@ -1,7 +1,7 @@
 # Day 04 - Kubernetes Core Refresher
 
 > **Goal**: Deploy app using Pod → Deployment → Service → Ingress pattern  
-> **Time**: 20 min | **Prereq**: [Day 03](../Section-00-orientation/day-03-repo-branching-strategy.md)
+> **Time**: 20 min | **Prereq**: [Day 03]
 
 ---
 
