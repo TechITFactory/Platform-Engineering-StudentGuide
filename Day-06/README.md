@@ -1,6 +1,5 @@
 # Day 06 - RBAC & Namespace Design
 
-<!--
   SUMMARY: What we're doing in this doc
   - Goal: build multi-tenant isolation on a shared K8s cluster using Namespaces + RBAC
 
@@ -27,7 +26,7 @@
   Why it matters:
   - Without RBAC: everyone gets cluster-admin, shared default namespace, no blast-radius containment, no cost tracking
   - With RBAC: least privilege, isolated teams, contained blast radius, per-team cost allocation
--->
+
 
 > **Goal**: Implement multi-tenant isolation using Namespaces and RBAC  
 > **Time**: 20 min | **Prereq**: [Day 05](day-05-config-secret-management.md)
