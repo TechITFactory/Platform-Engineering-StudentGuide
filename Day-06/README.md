@@ -1,7 +1,36 @@
 # Day 06 - RBAC & Namespace Design
 
+<!--
+  SUMMARY: What we're doing in this doc
+  - Goal: build multi-tenant isolation on a shared K8s cluster using Namespaces + RBAC
+
+  Step-by-step process:
+  - Step 1 - Create Namespace: make a team-alpha namespace to logically isolate the team's resources
+  - Step 2 - Define Role: scope exact permissions (pods, deployments, services, configmaps/secrets, logs); exclude Ingress
+  - Step 3 - ServiceAccount + RoleBinding: create identity (ServiceAccount) and bind it to the Role
+  - Step 4 - Test Permissions: use `kubectl auth can-i` to confirm allowed/denied actions match expectations
+  - Step 5 - Simulate Deployment: deploy an app using the team's ServiceAccount to prove it works end-to-end
+  - Bonus - ResourceQuota: cap pods/CPU/memory/PVCs per namespace to prevent resource sprawl
+  - ClusterRole/ClusterRoleBinding: grant cluster-wide permissions only when truly needed
+  - Clean Up: delete the namespace (cascades) or remove resources individually
+
+  Key one-liner definitions:
+  - Namespace - logical boundary partitioning cluster resources per team/env
+  - ServiceAccount - identity used by pods/CI to talk to the API server
+  - Role - permissions (verbs on resources) scoped to one namespace
+  - RoleBinding - links a ServiceAccount/user to a Role
+  - ClusterRole - same as Role but cluster-wide scope
+  - ClusterRoleBinding - links identity to a ClusterRole
+  - Verbs - get/list/watch/create/update/patch/delete/* define allowed actions
+  - ResourceQuota - enforces hard limits on resource consumption per namespace
+
+  Why it matters:
+  - Without RBAC: everyone gets cluster-admin, shared default namespace, no blast-radius containment, no cost tracking
+  - With RBAC: least privilege, isolated teams, contained blast radius, per-team cost allocation
+-->
+
 > **Goal**: Implement multi-tenant isolation using Namespaces and RBAC  
-> **Time**: 20 min | **Prereq**: [Day 05]
+> **Time**: 20 min | **Prereq**: [Day 05](day-05-config-secret-management.md)
 
 ---
 
