@@ -44,9 +44,9 @@ graph TB
     B --> E[ServiceAccount: alpha-ci]
     E --> F[RoleBinding]
     F --> G[Role: developer]
-    G --> H[Permissions:<br/>pods, deployments]
+    G --> H[Permissions: pods, deployments]
     
-    I[User/CI] -.Uses Identity.-> E
+    I[User/CI] -. Uses Identity .-> E
     
     style A fill:#E91E63
     style B fill:#2196F3
