@@ -1,5 +1,29 @@
 # Day 07 - CRDs, Operators, Controllers
 
+  SUMMARY: What we're doing in this doc
+  - Goal: extend the Kubernetes API with our own resource types, and watch a real operator (cert-manager) reconcile them
+
+  Step-by-step process:
+  - Step 1 - Inspect Existing CRDs: list CRDs already in the cluster (cert-manager's, installed on Day 01)
+  - Step 2 - Create a Custom Resource: create an Issuer (tells cert-manager how to sign certs)
+  - Step 3 - Use the Custom Resource: create a Certificate referencing the Issuer, verify a Secret gets generated
+  - Step 4 - Watch the Controller: read cert-manager's own logs to see it reconciling in real time
+  - Bonus - Create Your Own CRD: define a "Website" CRD and an instance, note it does nothing without a controller
+  - Reconciliation Loop Pattern: pseudocode of the fetch → compare → fix drift → update status loop every operator runs
+  - Clean Up: delete custom resources, then the CRD, then any leftover Secret
+
+  Key one-liner definitions:
+  - CRD (CustomResourceDefinition) - schema that teaches Kubernetes a brand new resource type
+  - Custom Resource - an instance of that type (e.g. your own Certificate or Issuer)
+  - Controller - code (usually in a Pod) that watches resources and reacts to them
+  - Operator - a controller with domain knowledge baked in (e.g. cert-manager knows TLS)
+  - Reconciliation - the loop where actual state is continuously corrected to match desired state
+
+  Why it matters:
+  - Kubernetes only ships with built-in types (Pod, Service, Deployment) — CRDs + operators are how you teach it anything else
+  - Every platform tool used later in this course (ArgoCD, Crossplane, cert-manager) is just this same pattern reused
+
+
 > **Goal**: Understand how to extend Kubernetes API with Custom Resources  
 > **Time**: 20 min | **Prereq**: [Day 06](day-06-rbac-namespace-design.md)
 
@@ -64,12 +88,19 @@ sequenceDiagram
         end
     end
 ```
+1. You run `kubectl apply` — you're just telling Kubernetes "this is what I want," nothing happens yet
+2. Kubernetes stores your YAML in etcd. It doesn't understand what a `Certificate` *means*, it just saves it because the CRD said this shape is valid
+3. The operator is constantly watching the API for resources it cares about (shown here as checking every 30 seconds)
+4. It compares what you asked for (desired state) against what's actually out there right now (actual state)
+5. If they don't match, the operator goes and fixes it — e.g. actually creates the certificate
+6. The real system confirms the action is done
+7. The operator writes the result back onto the resource's status — this is why `kubectl describe` shows `Ready: True`. You never touch AWS/the real system directly; the operator is always the one doing it on your behalf
 
 **Key points:**
-- Operators run in a continuous loop
-- They watch the API for Custom Resources
-- They reconcile actual state with desired state
-- They update status back to the API
+- Operators run in a continuous loop (they never "finish," they keep checking forever)
+- They watch the API for Custom Resources you create
+- They reconcile actual state with desired state (make reality match your YAML)
+- They update status back to the API so `kubectl` shows you progress
 
 ---
 
