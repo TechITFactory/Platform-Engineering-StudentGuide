@@ -4,7 +4,8 @@
   - Goal: extend the Kubernetes API with our own resource types, and watch a real operator (cert-manager) reconcile them
 
   Step-by-step process:
-  - Step 1 - Inspect Existing CRDs: list CRDs already in the cluster (cert-manager's, installed on Day 01)
+  - Step 0 - Prerequisite Check: verify cert-manager is installed (Day 01, Step 5); install it via Helm if a plain/fresh kind cluster doesn't have it
+  - Step 1 - Inspect Existing CRDs: list CRDs already in the cluster (cert-manager's)
   - Step 2 - Create a Custom Resource: create an Issuer (tells cert-manager how to sign certs)
   - Step 3 - Use the Custom Resource: create a Certificate referencing the Issuer, verify a Secret gets generated
   - Step 4 - Watch the Controller: read cert-manager's own logs to see it reconciling in real time
@@ -104,13 +105,59 @@ sequenceDiagram
 
 ---
 
+## Step 0: Prerequisite Check - cert-manager Installed?
+
+This lab assumes cert-manager is already running (it was installed back on [Day 01](../Section-00-orientation/day-01-environment-bootstrap.md), Step 5). On a fresh/plain `kind` cluster it usually isn't — check first:
+
+```bash
+# Check if cert-manager CRDs exist
+kubectl get crds | grep cert-manager
+```
+
+**If that returns nothing, install cert-manager now** (same steps as Day 01):
+
+```bash
+# Add the cert-manager Helm repo
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+
+# Install cert-manager (includes its CRDs)
+helm install cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version v1.14.4 \
+  --set crds.enabled=true \
+  --set startupapicheck.enabled=false
+
+# Wait until all 3 pods are Running (~30 sec)
+kubectl get pods -n cert-manager -w
+# (Ctrl+C once cert-manager, cainjector, and webhook all show Running)
+```
+
+**Note:** No Helm on this machine? Use the plain manifest instead (also installs the CRDs):
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.yaml
+```
+
+**If pods are Running but `kubectl get crds` still shows nothing:** the Helm `--set crds.enabled=true` flag didn't take effect (seen on plain kind clusters). Install the CRDs directly, then restart the pods so they pick them up:
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.4/cert-manager.crds.yaml
+
+kubectl rollout restart deployment -n cert-manager cert-manager cert-manager-cainjector cert-manager-webhook
+kubectl get pods -n cert-manager -w
+```
+
+Once `kubectl get crds | grep cert-manager` returns 6 CRDs, move on to Step 1.
+
+---
+
 ## Step 1: Inspect Existing CRDs
 
 ```bash
 # List all Custom Resource Definitions
 kubectl get crds
 
-# Filter for cert-manager (installed on Day 01)
+# Filter for cert-manager
 kubectl get crds | grep cert-manager
 
 # Expected output:
@@ -367,6 +414,7 @@ func Reconcile(ctx, req) {
 
 | Error | Fix |
 |-------|-----|
+| `no matches for kind "Issuer"/"Certificate"` | cert-manager not installed — run Step 0 above |
 | `no matches for kind "Certificate"` | CRD not installed, check `kubectl get crds` |
 | `validation error` | Schema mismatch, check CRD openAPIV3Schema |
 | `operator not reacting` | Check operator logs: `kubectl logs -n <namespace> <operator-pod>` |
@@ -439,6 +487,7 @@ kubectl delete secret test-tls
 
 ## Deliverables Checklist
 
+- [ ] Confirmed (or installed) cert-manager
 - [ ] Listed CRDs in cluster (`kubectl get crds`)
 - [ ] Created Issuer custom resource
 - [ ] Created Certificate using Issuer
