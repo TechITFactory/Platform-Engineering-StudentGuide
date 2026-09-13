@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Day 08 — Cluster Add-ons</title>
+<style>
+  :root{
+    --bg:#0b0f17; --bg2:#0f1420; --panel:#131a28; --panel-border:#22304a;
+    --text:#e7edf7; --muted:#93a4c3;
+    --accent:#ff6b4a; --accent2:#4ac9ff; --accent3:#6bffb0;
+    --code-bg:#0a0e17; --code-border:#26314a;
+    font-size:16px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:radial-gradient(circle at 20% 10%, #14203a 0%, var(--bg) 55%);color:var(--text);font-family:"Segoe UI",Inter,system-ui,-apple-system,sans-serif;overflow:hidden;}
+  .deck{position:relative;width:100%;height:100vh;}
+  .slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-start;padding:6vh 9vw;opacity:0;transform:translateX(40px);transition:opacity .45s ease, transform .45s ease;pointer-events:none;overflow-y:auto;}
+  .slide.active{opacity:1;transform:translateX(0);pointer-events:auto;}
+  .slide.prev{transform:translateX(-40px);}
+  .eyebrow{color:var(--accent2);letter-spacing:.18em;text-transform:uppercase;font-size:.78rem;font-weight:600;margin-bottom:.6rem;}
+  h1{font-size:2.6rem;margin:0 0 .3rem 0;line-height:1.15;background:linear-gradient(90deg,#fff,#b9c8ea);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  h2.sub{font-size:1.1rem;color:var(--muted);font-weight:400;margin:0 0 2rem 0;max-width:60ch;}
+  .content{display:flex;flex-direction:column;gap:1rem;max-width:1100px;}
+  .card{background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:1.1rem 1.4rem;display:flex;gap:1rem;align-items:flex-start;}
+  .card .tag{flex:0 0 auto;font-weight:700;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--bg);background:var(--accent2);border-radius:6px;padding:.3rem .55rem;margin-top:.1rem;white-space:nowrap;}
+  .card .body b{color:#fff;}
+  .card .body{color:var(--muted);font-size:1rem;line-height:1.5;}
+  .card.orange .tag{background:var(--accent);}
+  .card.green .tag{background:var(--accent3);color:#06110a;}
+  .card.red .tag{background:#ff4d6b;}
+  .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr);}
+  pre{background:var(--code-bg);border:1px solid var(--code-border);border-radius:12px;padding:1rem 1.2rem;overflow:auto;font-family:"Cascadia Code","Fira Code",Consolas,monospace;font-size:.88rem;line-height:1.5;max-height:42vh;color:#d7e2f5;}
+  pre .cmt{color:#6b7a99;} pre .kw{color:var(--accent2);} pre .str{color:var(--accent3);} pre .k2{color:var(--accent);}
+  .pre-wrap{position:relative;}
+  .pre-wrap pre{padding-top:2.6rem;}
+  .copy-btn{position:absolute;top:.6rem;right:.6rem;display:flex;align-items:center;gap:.4rem;background:var(--panel);border:1px solid var(--panel-border);color:var(--muted);font-size:.76rem;font-weight:600;padding:.35rem .65rem;border-radius:8px;cursor:pointer;transition:background .15s, color .15s, border-color .15s;z-index:2;font-family:"Segoe UI",Inter,system-ui,sans-serif;}
+  .copy-btn:hover{background:rgba(74,201,255,.12);color:var(--accent2);border-color:rgba(74,201,255,.4);}
+  .copy-btn.copied{background:rgba(107,255,176,.14);color:var(--accent3);border-color:rgba(107,255,176,.45);}
+  .copy-btn svg{width:13px;height:13px;flex:0 0 auto;}
+  .analogy{display:flex;gap:1rem;align-items:flex-start;background:linear-gradient(135deg, rgba(255,107,74,.08), rgba(74,201,255,.06));border:1px dashed rgba(255,107,74,.4);border-radius:14px;padding:1rem 1.3rem;margin-top:1.2rem;}
+  .analogy .aicon{font-size:1.8rem;flex:0 0 auto;line-height:1;}
+  .analogy .atext .atitle{font-weight:700;color:var(--accent);font-size:.78rem;letter-spacing:.05em;text-transform:uppercase;margin-bottom:.3rem;}
+  .analogy .atext p{margin:0;color:var(--text);font-size:.92rem;line-height:1.5;opacity:.92;}
+  .flow{display:flex;align-items:stretch;gap:.6rem;flex-wrap:wrap;}
+  .flow .step{flex:1 1 160px;background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:1rem;position:relative;min-width:160px;}
+  .flow .step .n{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:var(--accent);color:#1a0d08;font-weight:700;font-size:.85rem;margin-bottom:.5rem;}
+  .flow .step h4{margin:.2rem 0 .3rem 0;font-size:.98rem;}
+  .flow .step p{margin:0;color:var(--muted);font-size:.85rem;line-height:1.4;}
+  .flow .arrow{align-self:center;color:var(--accent2);font-size:1.4rem;flex:0 0 auto;}
+  .badge-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;}
+  .badge{background:rgba(74,201,255,.12);color:var(--accent2);border:1px solid rgba(74,201,255,.35);border-radius:999px;padding:.3rem .8rem;font-size:.82rem;font-weight:600;}
+  .diagram{display:flex;align-items:center;justify-content:center;gap:1.2rem;margin-top:1rem;flex-wrap:wrap;}
+  .box{background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:1rem 1.3rem;text-align:center;min-width:140px;}
+  .box.hi{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset;}
+  .box.bad{border-color:#ff4d6b;box-shadow:0 0 0 1px #ff4d6b inset;}
+  .box .icon{font-size:1.6rem;}
+  .box .lbl{font-weight:700;margin-top:.3rem;}
+  .box .desc{color:var(--muted);font-size:.8rem;margin-top:.2rem;}
+  .dia-arrow{color:var(--accent3);font-size:1.6rem;}
+  .title-slide{align-items:center;text-align:center;margin:auto 0;}
+  .title-slide h1{font-size:3.6rem;}
+  .title-slide .sub{max-width:50ch;margin:0 auto 2rem;}
+  .meta-row{display:flex;gap:1.2rem;justify-content:center;margin-top:2rem;color:var(--muted);font-size:.9rem;flex-wrap:wrap;}
+  .meta-row div{border-left:2px solid var(--accent2);padding-left:.6rem;}
+  .foot{position:absolute;bottom:1.4rem;left:9vw;right:9vw;display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:.78rem;z-index:5;}
+  .progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .3s ease;z-index:10;}
+  .navdots{display:flex;gap:.4rem;}
+  .navdots span{width:7px;height:7px;border-radius:50%;background:#2a3652;transition:background .2s;}
+  .navdots span.on{background:var(--accent2);}
+  .nav-btn{position:fixed;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.05);border:1px solid var(--panel-border);color:var(--text);width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1.2rem;z-index:10;user-select:none;transition:background .2s;}
+  .nav-btn:hover{background:rgba(255,255,255,.12);}
+  .nav-btn.left{left:20px;} .nav-btn.right{right:20px;}
+  .kicker-icon{font-size:2.2rem;margin-bottom:.6rem;}
+  .warn{background:rgba(255,77,107,.1);border:1px solid rgba(255,77,107,.4);border-radius:14px;padding:1rem 1.3rem;color:#ffb3c1;font-size:.92rem;line-height:1.5;margin-top:1rem;}
+  .warn b{color:#ff8fa3;}
+  table.cmp{width:100%;border-collapse:collapse;margin-top:1rem;}
+  table.cmp th, table.cmp td{border:1px solid var(--panel-border);padding:.6rem .9rem;text-align:left;font-size:.85rem;}
+  table.cmp th{background:var(--panel);color:var(--accent2);}
+  table.cmp td{color:var(--muted);}
+  table.cmp td b{color:var(--text);}
+  .tier{display:flex;gap:1rem;flex-wrap:wrap;margin-top:1rem;}
+  .tier .tcol{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--panel-border);border-radius:14px;padding:1rem;}
+  .tier .tcol h4{margin:0 0 .6rem 0;font-size:.95rem;}
+  .tier .tcol ul{margin:0;padding-left:1.1rem;color:var(--muted);font-size:.85rem;line-height:1.6;}
+  .tier .t0{border-color:#ff4d6b;}
+  .tier .t0 h4{color:#ff4d6b;}
+  .tier .t1{border-color:var(--accent);}
+  .tier .t1 h4{color:var(--accent);}
+  .tier .t2{border-color:var(--accent2);}
+  .tier .t2 h4{color:var(--accent2);}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:#26314a;border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+<div class="deck" id="deck"></div>
+<div class="nav-btn left" onclick="go(-1)">&#8592;</div>
+<div class="nav-btn right" onclick="go(1)">&#8594;</div>
+
+<script>
+const slides = [];
+
+// ---------- 1. Title ----------
+slides.push(`
+<div class="title-slide">
+  <div class="kicker-icon">&#128268;</div>
+  <div class="eyebrow">Section 01 &middot; Kubernetes Primitives</div>
+  <h1>Day 08: Cluster Add-ons</h1>
+  <p class="sub">Validating the platform services every app team quietly depends on — Ingress, Storage, and cert-manager.</p>
+  <div class="meta-row">
+    <div>Ingress Controller</div>
+    <div>StorageClass</div>
+    <div>cert-manager</div>
+    <div>Path-Based Routing</div>
+  </div>
+</div>
+`);
+
+// ---------- 2. The Concept Diagram ----------
+slides.push(`
+<div class="eyebrow">The Concept</div>
+<h1>How the Three Add-ons Fit Together</h1>
+<h2 class="sub">External traffic, persistent storage, and TLS — three separate concerns, three separate add-ons.</h2>
+<div class="diagram">
+  <div class="box hi"><div class="icon">&#127760;</div><div class="lbl">External Traffic</div><div class="desc">HTTP/HTTPS</div></div>
+  <div class="dia-arrow">&#8594;</div>
+  <div class="box hi"><div class="icon">&#128268;</div><div class="lbl">Ingress Controller</div><div class="desc">ingress-nginx<br>path-based routing</div></div>
+</div>
+<div class="diagram">
+  <div class="box"><div class="icon">&#128190;</div><div class="lbl">PersistentVolumeClaim</div><div class="desc">Provisions</div></div>
+  <div class="dia-arrow">&#8594;</div>
+  <div class="box"><div class="icon">&#127991;&#65039;</div><div class="lbl">StorageClass</div><div class="desc">standard</div></div>
+  <div class="dia-arrow">&#8594;</div>
+  <div class="box"><div class="icon">&#128191;</div><div class="lbl">PersistentVolume</div><div class="desc">Creates</div></div>
+</div>
+<div class="diagram">
+  <div class="box green"><div class="icon">&#128274;</div><div class="lbl">Certificate</div><div class="desc">Managed by</div></div>
+  <div class="dia-arrow">&#8594;</div>
+  <div class="box"><div class="icon">&#9989;</div><div class="lbl">cert-manager</div><div class="desc">Automated TLS</div></div>
+</div>
+<div class="content">
+  <div class="card"><div class="tag">Traffic</div><div class="body"><b>Ingress Controller</b> &mdash; routes external traffic to services (path-based routing).</div></div>
+  <div class="card orange"><div class="tag">Storage</div><div class="body"><b>StorageClass</b> &mdash; auto-provisions persistent volumes for databases.</div></div>
+  <div class="card green"><div class="tag">TLS</div><div class="body"><b>cert-manager</b> &mdash; automated TLS certificate management.</div></div>
+</div>
+`);
+
+// ---------- 3. Bare Cluster Problem ----------
+slides.push(`
+<div class="eyebrow">Motivation</div>
+<h1>The Bare Cluster Problem</h1>
+<h2 class="sub">A freshly installed Kubernetes cluster can't actually serve traffic to anyone.</h2>
+<div class="grid">
+  <div class="card red"><div class="tag">Without</div><div class="body">No external traffic routing, no persistent storage, no TLS certs, no monitoring, no DNS-based discovery.</div></div>
+  <div class="card green"><div class="tag">With Add-ons</div><div class="body">Ingress controller, StorageClass, cert-manager, monitoring stack, DNS provider &mdash; a cluster app teams can actually use.</div></div>
+</div>
+<div class="analogy">
+  <div class="aicon">&#127968;</div>
+  <div class="atext">
+    <div class="atitle">Real-Life Example &mdash; A House With No Utilities</div>
+    <p>A bare Kubernetes cluster is like a newly built house with <b>no plumbing, no electricity, and no mail slot</b>. The walls (nodes) are up, but nobody can move in until utilities (add-ons) are connected. Ingress is the mail slot, storage is the plumbing, cert-manager is the security system.</p>
+  </div>
+</div>
+`);
+
+// ---------- 4. Essential Add-ons Table ----------
+slides.push(`
+<div class="eyebrow">Reference</div>
+<h1>Essential Platform Add-ons</h1>
+<h2 class="sub">All pre-installed on Day 01 &mdash; today we validate they actually work.</h2>
+<table class="cmp">
+  <tr><th>Add-on</th><th>Purpose</th><th>When App Teams Need It</th></tr>
+  <tr><td><b>Ingress Controller</b></td><td>HTTP routing</td><td>Expose web app</td></tr>
+  <tr><td><b>Storage Provisioner</b></td><td>Dynamic PVs</td><td>Run database</td></tr>
+  <tr><td><b>cert-manager</b></td><td>TLS certificates</td><td>HTTPS/webhooks</td></tr>
+  <tr><td><b>Metrics Server</b></td><td>Pod metrics</td><td>Autoscaling</td></tr>
+  <tr><td><b>CoreDNS</b></td><td>DNS</td><td>Service discovery</td></tr>
+  <tr><td><b>CNI Plugin</b></td><td>Pod networking</td><td>Pod-to-pod communication</td></tr>
+</table>
+`);
+
+// ---------- 5. Minikube addons vs kind install ----------
+slides.push(`
+<div class="eyebrow">Deep Dive</div>
+<h1>Minikube "Addons" vs kind "Install"</h1>
+<h2 class="sub">Minikube flips a switch. kind expects you to apply the manifest yourself — same result, different mental model.</h2>
+<table class="cmp">
+  <tr><th>Add-on</th><th>Minikube</th><th>kind</th></tr>
+  <tr><td><b>Ingress</b></td><td><b>minikube addons enable ingress</b></td><td>Apply the kind-specific ingress-nginx manifest</td></tr>
+  <tr><td><b>Storage</b></td><td>storage-provisioner addon (on by default)</td><td>local-path-provisioner ships built-in as StorageClass <b>standard</b></td></tr>
+  <tr><td><b>cert-manager</b></td><td>Not an addon &mdash; install via manifest/Helm</td><td>Install via manifest/Helm (identical to minikube here)</td></tr>
+</table>
+<pre><span class="cmt"># Minikube: check which addons are enabled</span>
+<span class="kw">minikube</span> addons list
+<span class="cmt"># Look for "ingress" and "storage-provisioner" → STATUS: enabled</span>
+
+<span class="cmt"># Minikube: enable if missing</span>
+<span class="kw">minikube</span> addons enable ingress
+<span class="kw">minikube</span> addons enable storage-provisioner</pre>
+<pre><span class="cmt"># kind: there is no "addons enable" — you check for the resource,</span>
+<span class="cmt"># and if it's missing, you install it directly with kubectl/helm.</span>
+
+<span class="cmt"># 1) Check if ingress-nginx namespace/controller exists</span>
+<span class="kw">kubectl</span> get ns ingress-nginx 2&gt;/dev/null || echo "NOT INSTALLED"
+
+<span class="cmt"># 2) If missing, install the kind-specific ingress-nginx manifest</span>
+<span class="kw">kubectl</span> apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+
+<span class="cmt"># 3) Wait for the controller to become ready</span>
+<span class="kw">kubectl</span> wait --namespace ingress-nginx \\
+  --for=condition=ready pod \\
+  --selector=app.kubernetes.io/component=controller \\
+  --timeout=120s</pre>
+<div class="analogy">
+  <div class="aicon">&#128268;</div>
+  <div class="atext">
+    <div class="atitle">Real-Life Example &mdash; A Light Switch vs Running Your Own Wiring</div>
+    <p>Minikube is a house with <b>pre-wired light switches</b> &mdash; flip <b>addons enable</b> and the light (add-on) turns on. kind hands you the <b>bare wire and the bulb</b> &mdash; you run the manifest yourself. Same light in the end, but kind expects you to know what "installed" actually means under the hood, which is exactly why we always check first, then install.</p>
+  </div>
+</div>
+`);
+
+// ---------- 6. Validate Ingress ----------
+slides.push(`
+<div class="eyebrow">Lab &middot; 01</div>
+<h1>Validate Ingress Controller</h1>
+<h2 class="sub">Check first — if it's not installed/running, install it, then confirm before trusting it with real traffic.</h2>
+<pre><span class="cmt"># Step 1: Check if it's installed at all</span>
+<span class="kw">kubectl</span> get pods -n ingress-nginx
+<span class="cmt"># If you see "No resources found" or "namespaces not found" → NOT INSTALLED</span>
+
+<span class="cmt"># Step 2 (kind only, if missing): install it</span>
+<span class="kw">kubectl</span> apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+<span class="kw">kubectl</span> wait --namespace ingress-nginx \\
+  --for=condition=ready pod \\
+  --selector=app.kubernetes.io/component=controller \\
+  --timeout=120s
+
+<span class="cmt"># Step 3: Re-check — pod should now be Running</span>
+<span class="kw">kubectl</span> get pods -n ingress-nginx
+<span class="cmt"># Expected: ingress-nginx-controller pod Running</span>
+
+<span class="cmt"># Step 4: Check the service exists</span>
+<span class="kw">kubectl</span> get svc -n ingress-nginx ingress-nginx-controller
+<span class="cmt"># Expected: ClusterIP service on port 80/443</span></pre>
+<div class="warn">
+  <b>On minikube instead:</b> run <b>minikube addons list</b> first — if ingress shows <b>disabled</b>, run <b>minikube addons enable ingress</b> instead of applying the kind manifest above.
+</div>
+`);
+
+// ---------- 7. Validate Storage ----------
+slides.push(`
+<div class="eyebrow">Lab &middot; 02</div>
+<h1>Validate Storage Class</h1>
+<h2 class="sub">Check it's actually enabled, install if it isn't, then prove dynamic provisioning works.</h2>
+<pre><span class="cmt"># Step 1: Check if a default StorageClass is enabled</span>
+<span class="kw">kubectl</span> get storageclass
+<span class="cmt"># NAME                 PROVISIONER             RECLAIMPOLICY
+# standard (default)   rancher.io/local-path   Delete
+#
+# If this returns nothing → NOT ENABLED, no default provisioner</span></pre>
+<pre><span class="cmt"># Step 2 (kind only, if missing): kind ships local-path-provisioner</span>
+<span class="cmt"># by default, but if it was removed/disabled, reinstall it:</span>
+<span class="kw">kubectl</span> apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+
+<span class="cmt"># Mark it as the default StorageClass</span>
+<span class="kw">kubectl</span> patch storageclass local-path \\
+  -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'</pre>
+<div class="warn">
+  <b>On minikube instead:</b> run <b>minikube addons list</b> — if <b>storage-provisioner</b> shows <b>disabled</b>, run <b>minikube addons enable storage-provisioner</b> instead of applying the manifest above.
+</div>
+<pre><span class="cmt"># Step 3: Test dynamic provisioning end-to-end</span></pre>
+<pre><span class="k2">apiVersion</span>: v1
+<span class="k2">kind</span>: PersistentVolumeClaim
+<span class="k2">metadata</span>:
+  <span class="k2">name</span>: <span class="str">test-pvc</span>
+<span class="k2">spec</span>:
+  <span class="k2">accessModes</span>:
+  - <span class="str">ReadWriteOnce</span>
+  <span class="k2">resources</span>:
+    <span class="k2">requests</span>:
+      <span class="k2">storage</span>: <span class="str">1Gi</span></pre>
+<pre><span class="kw">kubectl</span> apply -f test-pvc.yaml
+<span class="kw">kubectl</span> get pvc test-pvc   <span class="cmt"># STATUS should be "Bound"</span>
+<span class="kw">kubectl</span> get pv             <span class="cmt"># see the auto-created PersistentVolume</span>
+<span class="kw">kubectl</span> delete pvc test-pvc</pre>
+`);
+
+// ---------- 8. Validate cert-manager ----------
+slides.push(`
+<div class="eyebrow">Lab &middot; 03</div>
+<h1>Validate cert-manager</h1>
+<h2 class="sub">Not an addon on either platform — check for the namespace, install via manifest if it's missing.</h2>
+<pre><span class="cmt"># Step 1: Check if cert-manager is installed at all</span>
+<span class="kw">kubectl</span> get ns cert-manager 2&gt;/dev/null || echo "NOT INSTALLED"
+<span class="kw">kubectl</span> get pods -n cert-manager</pre>
+<pre><span class="cmt"># Step 2 (if missing, kind AND minikube — identical either way):</span>
+<span class="kw">kubectl</span> apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.14.5/cert-manager.yaml
+
+<span class="cmt"># Wait for all three deployments to become available</span>
+<span class="kw">kubectl</span> wait --namespace cert-manager \\
+  --for=condition=available deployment \\
+  --all --timeout=120s</pre>
+<pre><span class="cmt"># Step 3: Re-check — expect 3 pods Running</span>
+<span class="kw">kubectl</span> get pods -n cert-manager
+<span class="cmt"># - cert-manager
+# - cert-manager-cainjector
+# - cert-manager-webhook</span></pre>
+<pre><span class="kw">kubectl</span> get crds | grep cert-manager
+<span class="cmt"># Expected: certificates, issuers, clusterissuers, etc.</span></pre>
+<div class="warn">
+  <b>No minikube addon exists for cert-manager.</b> The install command above is identical on minikube and kind — this is the one add-on where both platforms behave the same way.
+</div>
+`);
+
+// ---------- 8. Path-based routing test setup ----------
+slides.push(`
+<div class="eyebrow">Lab &middot; 04</div>
+<h1>Test Path-Based Routing</h1>
+<h2 class="sub">Two tiny apps, two paths, one Ingress — the same pattern used for Backstage and ArgoCD.</h2>
+<pre><span class="k2">apiVersion</span>: networking.k8s.io/v1
+<span class="k2">kind</span>: Ingress
+<span class="k2">metadata</span>:
+  <span class="k2">name</span>: <span class="str">fruit-ingress</span>
+  <span class="k2">annotations</span>:
+    <span class="k2">nginx.ingress.kubernetes.io/ssl-redirect</span>: <span class="str">"false"</span>
+    <span class="k2">nginx.ingress.kubernetes.io/rewrite-target</span>: <span class="str">/</span>
+<span class="k2">spec</span>:
+  <span class="k2">ingressClassName</span>: <span class="str">nginx</span>
+  <span class="k2">rules</span>:
+  - <span class="k2">http</span>:
+      <span class="k2">paths</span>:
+      - <span class="k2">path</span>: <span class="str">/apple</span>
+        <span class="k2">pathType</span>: <span class="str">Prefix</span>
+        <span class="k2">backend</span>:
+          <span class="k2">service</span>:
+            <span class="k2">name</span>: <span class="str">apple-svc</span>
+            <span class="k2">port</span>:
+              <span class="k2">number</span>: <span class="str">5678</span>
+      - <span class="k2">path</span>: <span class="str">/banana</span>
+        <span class="k2">pathType</span>: <span class="str">Prefix</span>
+        <span class="k2">backend</span>:
+          <span class="k2">service</span>:
+            <span class="k2">name</span>: <span class="str">banana-svc</span>
+            <span class="k2">port</span>:
+              <span class="k2">number</span>: <span class="str">5678</span></pre>
+<pre><span class="kw">kubectl</span> apply -f routing-test.yaml
+<span class="kw">kubectl</span> get pods -l app=apple
+<span class="kw">kubectl</span> get pods -l app=banana
+<span class="kw">kubectl</span> get ingress fruit-ingress</pre>
+`);
+
+// ---------- 9. Test traffic routing ----------
+slides.push(`
+<div class="eyebrow">Lab &middot; 05</div>
+<h1>Test Traffic Routing</h1>
+<h2 class="sub">Port-forward the controller and prove path-based routing actually works.</h2>
+<pre><span class="cmt"># In a separate terminal: port-forward the ingress controller</span>
+<span class="kw">kubectl</span> port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80</pre>
+<pre><span class="kw">curl</span> http://localhost:8080/apple   <span class="cmt"># Expected: apple</span>
+<span class="kw">curl</span> http://localhost:8080/banana  <span class="cmt"># Expected: banana</span>
+<span class="kw">curl</span> http://localhost:8080/orange  <span class="cmt"># Expected: 404 (no route defined)</span></pre>
+<div class="flow">
+  <div class="step"><span class="n">1</span><h4>Request</h4><p>http://localhost:8080/apple</p></div>
+  <div class="arrow">&#8594;</div>
+  <div class="step"><span class="n">2</span><h4>Ingress Controller</h4><p>Reads fruit-ingress rules</p></div>
+  <div class="arrow">&#8594;</div>
+  <div class="step"><span class="n">3</span><h4>apple-svc:5678</h4><p>Selects app=apple pods</p></div>
+  <div class="arrow">&#8594;</div>
+  <div class="step"><span class="n">4</span><h4>Response</h4><p>"apple"</p></div>
+</div>
+<div class="analogy">
+  <div class="aicon">&#127860;</div>
+  <div class="atext">
+    <div class="atitle">Real-Life Example &mdash; A Food Court Directory Board</div>
+    <p>The Ingress is the <b>directory board</b> at the entrance of a food court: "/apple &rarr; Stall 3, /banana &rarr; Stall 7." Walk up asking for something not listed (/orange) and you get a polite "not found" &mdash; the board works, it just has no entry for that request.</p>
+  </div>
+</div>
+`);
+
+// ---------- 10. Health check script ----------
+slides.push(`
+<div class="eyebrow">Lab &middot; 06</div>
+<h1>Add-on Health Check Script</h1>
+<h2 class="sub">A single script to sanity-check every critical add-on at once.</h2>
+<pre><span class="cmt">#!/bin/bash
+echo "=== Cluster Add-ons Validation ==="</span>
+
+<span class="cmt"># Ingress</span>
+echo -n "Ingress Controller: "
+<span class="kw">kubectl</span> get pods -n ingress-nginx --no-headers 2&gt;/dev/null | grep -q Running &amp;&amp; echo "&#9989; Running" || echo "&#10060; Not running"
+
+<span class="cmt"># Storage</span>
+echo -n "Default StorageClass: "
+<span class="kw">kubectl</span> get sc standard &amp;&gt;/dev/null &amp;&amp; echo "&#9989; Available" || echo "&#10060; Missing"
+
+<span class="cmt"># cert-manager</span>
+echo -n "cert-manager: "
+<span class="kw">kubectl</span> get pods -n cert-manager --no-headers 2&gt;/dev/null | grep -c Running | grep -q 3 &amp;&amp; echo "&#9989; 3 pods running" || echo "&#10060; Not running"</pre>
+<pre><span class="kw">chmod</span> +x validate-addons.sh
+<span class="kw">./validate-addons.sh</span></pre>
+`);
+
+// ---------- 11. Production Tier Strategy ----------
+slides.push(`
+<div class="eyebrow">Deep Dive</div>
+<h1>Production Add-on Strategy</h1>
+<h2 class="sub">Not every add-on failure is equally catastrophic — tier them accordingly.</h2>
+<div class="tier">
+  <div class="tcol t0">
+    <h4>Tier-0 &mdash; Critical, Must Never Fail</h4>
+    <ul>
+      <li>Ingress Controller — all traffic depends on it</li>
+      <li>CoreDNS — service discovery</li>
+      <li>CNI Plugin — pod networking</li>
+    </ul>
+  </div>
+  <div class="tcol t1">
+    <h4>Tier-1 &mdash; Essential, High Priority</h4>
+    <ul>
+      <li>cert-manager — certificate renewal</li>
+      <li>Storage Provisioner — stateful apps</li>
+      <li>Metrics Server — autoscaling</li>
+    </ul>
+  </div>
+  <div class="tcol t2">
+    <h4>Tier-2 &mdash; Important, Medium Priority</h4>
+    <ul>
+      <li>Monitoring Stack — observability</li>
+      <li>Logging Stack — debugging</li>
+      <li>Backup Tool — disaster recovery</li>
+    </ul>
+  </div>
+</div>
+<div class="analogy">
+  <div class="aicon">&#128658;</div>
+  <div class="atext">
+    <div class="atitle">Real-Life Example &mdash; A Hospital's Triage System</div>
+    <p>Tier-0 is the <b>ER and life-support systems</b> &mdash; downtime is an emergency. Tier-1 is <b>pharmacy and lab services</b> &mdash; important, but a brief outage is survivable. Tier-2 is <b>the gift shop</b> &mdash; nice to have, nobody dies if it's closed for an hour.</p>
+  </div>
+</div>
+`);
+
+// ---------- 12. Common Issues ----------
+slides.push(`
+<div class="eyebrow">Troubleshooting</div>
+<h1>Common Issues</h1>
+<h2 class="sub">The failure signatures you'll actually see in the wild.</h2>
+<table class="cmp">
+  <tr><th>Error</th><th>Fix</th></tr>
+  <tr><td><b>Ingress has no address</b></td><td>Wait 30s, ingress controller may be starting</td></tr>
+  <tr><td><b>503 Service Unavailable</b></td><td>Backend pods not ready, check <b>kubectl get pods</b></td></tr>
+  <tr><td><b>404 Not Found</b></td><td>Path doesn't match Ingress rules, check <b>kubectl get ingress -o yaml</b></td></tr>
+  <tr><td><b>PVC stuck in Pending</b></td><td>No StorageClass or provisioner down</td></tr>
+  <tr><td><b>Certificate not issued</b></td><td>Check cert-manager logs: <b>kubectl logs -n cert-manager &lt;pod&gt;</b></td></tr>
+</table>
+`);
+
+// ---------- 13. Operational Insights ----------
+slides.push(`
+<div class="eyebrow">Summary</div>
+<h1>Operational Insights</h1>
+<h2 class="sub">Treat these as infrastructure, not afterthoughts.</h2>
+<div class="content">
+  <div class="card red"><div class="tag">Tier-0</div><div class="body">Ingress fails &rarr; every app offline. cert-manager fails &rarr; certs expire, APIs break. Storage fails &rarr; databases can't provision. DNS fails &rarr; services can't communicate.</div></div>
+  <div class="card orange"><div class="tag">Monitor</div><div class="body">Prometheus metrics per add-on, alerts for pod restarts, alerts for certificate expiry, regular backup of add-on configs.</div></div>
+  <div class="card green"><div class="tag">Versioning</div><div class="body">Pin add-on versions (Helm chart versions), test upgrades in staging first, keep upgrade runbooks, have a rollback plan.</div></div>
+</div>
+`);
+
+// ---------- 14. Closing ----------
+slides.push(`
+<div class="title-slide">
+  <div class="kicker-icon">&#127881;</div>
+  <div class="eyebrow">Section-01 Complete</div>
+  <h1>Day 08 Complete</h1>
+  <p class="sub">You've validated Ingress, Storage, and cert-manager, tested path-based routing, and learned the tier-0/1/2 add-on strategy.</p>
+  <div class="badge-row" style="justify-content:center;">
+    <span class="badge">Day 04: K8s Core</span>
+    <span class="badge">Day 05: Config & Secrets</span>
+    <span class="badge">Day 06: RBAC & Namespaces</span>
+    <span class="badge">Day 07: CRDs & Operators</span>
+    <span class="badge">Day 08: Cluster Add-ons</span>
+  </div>
+  <p class="sub" style="margin-top:1.5rem;">Next: Section-02 ArgoCD Foundations (Days 09&ndash;14)</p>
+</div>
+`);
+
+// ---------- Render ----------
+const deck = document.getElementById('deck');
+slides.forEach((html, i) => {
+  const div = document.createElement('div');
+  div.className = 'slide';
+  div.innerHTML = html + `<div class="foot"><span>Day 08 &middot; Cluster Add-ons</span><span class="navdots" id="dots"></span><span>${i+1} / ${slides.length}</span></div>`;
+  deck.appendChild(div);
+});
+
+// ---------- Copy-to-clipboard buttons for every code block ----------
+const COPY_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
+const CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+document.querySelectorAll('#deck pre').forEach(pre => {
+  const wrap = document.createElement('div');
+  wrap.className = 'pre-wrap';
+  pre.parentNode.insertBefore(wrap, pre);
+  wrap.appendChild(pre);
+
+  const btn = document.createElement('button');
+  btn.className = 'copy-btn';
+  btn.type = 'button';
+  btn.innerHTML = `${COPY_ICON}<span>Copy</span>`;
+  btn.addEventListener('click', async () => {
+    const text = pre.innerText;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    btn.classList.add('copied');
+    btn.innerHTML = `${CHECK_ICON}<span>Copied!</span>`;
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = `${COPY_ICON}<span>Copy</span>`;
+    }, 1800);
+  });
+  wrap.appendChild(btn);
+});
+
+let current = 0;
+const slideEls = document.querySelectorAll('.slide');
+const progress = document.getElementById('progress');
+
+function render(){
+  slideEls.forEach((el,i)=>{
+    el.classList.remove('active','prev');
+    if(i===current) el.classList.add('active');
+    else if(i<current) el.classList.add('prev');
+  });
+  progress.style.width = ((current+1)/slides.length*100) + '%';
+  document.querySelectorAll('#dots').forEach(d=>{
+    d.innerHTML = slides.map((_,i)=>`<span class="${i===current?'on':''}"></span>`).join('');
+  });
+}
+
+function go(delta){
+  current = Math.min(Math.max(current+delta,0), slides.length-1);
+  render();
+}
+
+window.addEventListener('keydown', (e)=>{
+  if(e.key==='ArrowRight' || e.key===' ' || e.key==='PageDown') go(1);
+  if(e.key==='ArrowLeft' || e.key==='PageUp') go(-1);
+  if(e.key==='Home') { current=0; render(); }
+  if(e.key==='End') { current=slides.length-1; render(); }
+});
+
+let touchStartX = 0;
+window.addEventListener('touchstart', e=> touchStartX = e.touches[0].clientX);
+window.addEventListener('touchend', e=>{
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if(dx > 50) go(-1);
+  if(dx < -50) go(1);
+});
+
+render();
+</script>
+</body>
+</html>
