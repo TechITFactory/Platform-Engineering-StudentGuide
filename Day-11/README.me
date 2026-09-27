@@ -3,6 +3,25 @@
 > **Course:** Platform Engineering Masterclass — GitOps with ArgoCD  
 > **Section:** Section 02 — ArgoCD Foundations  
 > **Day:** Day 11 — The ArgoCD Application CRD, Declarative GitOps, and Reconciliation Lifecycle  
+> **Estimated Time:** 20–30 minutes  
+> **Companion Interactive Tool:** Open [`demo.html`](demo.html) in your web browser for 1-click terminal commands and real-time evidence generation.  
+> **Presentation Deck:** Open [`presentation.html`](presentation.html) for slide visuals.  
+> **Spoken Transcript:** Read [`TRANSCRIPT.md`](TRANSCRIPT.md) or open [`transcript.html`](transcript.html).
+
+---
+
+## 🧭 Lab Execution Roadmap
+
+This guide is organized into progressive milestones. Follow this roadmap to master declarative GitOps and the reconciliation lifecycle:
+
+| Phase | Milestone | Focus & Student Action |
+| :--- | :--- | :--- |
+| **Phase 1** | Architectural Foundations & The Ghost Resource Problem | Understand why imperative `kubectl apply` drifts and how declarative GitOps solves it. |
+| **Phase 2** | Application CRD Authoring | Inspect the 4 core spec blocks (Project, Source, Destination, SyncPolicy) and author `guestbook-app.yaml`. |
+| **Phase 3** | Pre-Sync State Inspection | Apply the Application manifest and verify initial `OutOfSync` (Yellow) and `Missing` (Grey) statuses. |
+| **Phase 4** | Live Sync & Cluster Topology | Execute manual synchronization via CLI/UI and inspect the hierarchical Kubernetes resource tree. |
+| **Phase 5** | Workload Testing & Drift Simulation | Access the Guestbook web UI, simulate cluster drift via `kubectl scale`, and verify drift detection using `argocd app diff`. |
+| **Phase 6** | Teardown & Evidence Verification | Safely teardown lab workloads and export structured lab completion evidence. |
 
 ---
 
@@ -381,7 +400,7 @@ apps   Deployment  guestbook  guestbook-ui  OutOfSync  Missing
 > The commit SHA (`8088f4c` here) is whatever `HEAD` of the upstream example repo points at on the day you run the lab — yours will differ, and that is fine. Resources are also listed `Service` before `Deployment`.
 
 #### 🔍 Why are these statuses normal?
-- **Sync Status: `OutOfSync` (Yellow Badge):** Git declares that a `Deployment` and a `Service` should exist. But nothing exists in the `guestbook` namespace yet. Desired State $\neq$ Live State.
+- **Sync Status: `OutOfSync` (Yellow Badge):** Git declares that a `Deployment` and a `Service` should exist. But nothing exists in the `guestbook` namespace yet. Desired State ≠ Live State.
 - **Health Status: `Missing` (Grey Heart):** Because the Deployment and Service have not been applied to Kubernetes, their health cannot be determined.
 
 Open your browser to `https://localhost:8080`:
@@ -485,8 +504,8 @@ replicaset.apps/guestbook-ui-84774bdc6f   1         1         1       113s
              └── guestbook-ui-6c8d9b4f7d (ReplicaSet)
                     └── guestbook-ui-6c8d9b4f7d-abc12 (Pod) [1/1 Running]
    ```
-3. Click on the green **Pod** node &rarr; Click **Logs** to view the container logs directly in your browser!
-4. Click on the **Deployment** node &rarr; Click **Diff** to confirm there is 0% drift between Git and Kubernetes.
+3. Click on the green **Pod** node → Click **Logs** to view the container logs directly in your browser!
+4. Click on the **Deployment** node → Click **Diff** to confirm there is 0% drift between Git and Kubernetes.
 
 ---
 
