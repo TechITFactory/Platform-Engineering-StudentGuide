@@ -1,0 +1,769 @@
+# Day 11 Student Lab Guide — First Application Sync & Reconciliation Lifecycle
+
+> **Course:** Platform Engineering Masterclass — GitOps with ArgoCD  
+> **Section:** Section 02 — ArgoCD Foundations  
+> **Day:** Day 11 — The ArgoCD Application CRD, Declarative GitOps, and Reconciliation Lifecycle  
+
+---
+
+## 🎯 What You Will Learn & Why It Matters
+
+### The Real-World Problem: "Ghost Infrastructure"
+In traditional DevOps pipelines, engineers run imperative commands like:
+```bash
+kubectl apply -f manifests/
+```
+While this creates and updates resources, **Kubernetes has no memory of what you deleted from Git**. If a developer deletes an old ingress or secret from Git, `kubectl apply` simply ignores it. Over months, your production cluster fills up with abandoned ingresses routing traffic to dead pods, orphaned configmaps, and lingering security risks. We call these **Ghost Resources**.
+
+### The GitOps Solution: Declarative Reconciliation
+With ArgoCD:
+1. **Git is the Single Source of Truth:** Your Git repository defines exactly what should exist. Nothing more, nothing less.
+2. **Continuous Reconciliation:** ArgoCD pulls your Git repo every 3 minutes (or via webhook), compares it against live cluster state, and flags any discrepancy as `OutOfSync`.
+3. **Drift Detection:** If someone manually modifies the cluster with `kubectl edit` or `kubectl scale`, ArgoCD immediately detects the drift so you can restore desired state.
+
+```mermaid
+graph LR
+    subgraph Git["Git Repository"]
+        A["argocd-example-apps/guestbook<br/>- deployment.yaml<br/>- service.yaml"]
+    end
+
+    subgraph ArgoCD["ArgoCD Control Plane (argocd namespace)"]
+        B["Application CRD<br/>(guestbook)"]
+        C["Repo Server<br/>(Clones Git repo)"]
+        D["Application Controller<br/>(Reconciliation Loop)"]
+    end
+
+    subgraph Cluster["Target Kubernetes Cluster"]
+        E["guestbook Namespace<br/>- Deployment (guestbook-ui)<br/>- ReplicaSet<br/>- Pods (1/1)<br/>- Service (guestbook-ui:80)"]
+    end
+
+    A -->|"1. Fetch desired state"| C
+    C -->|"2. Manifests"| D
+    B -->|"Defines target & source"| D
+    D <-->|"3. Compare live vs desired"| Cluster
+    D -->|"4. Reconcile (Sync)"| E
+```
+
+---
+
+## 📋 Pre-Flight Cluster Health Check
+
+Before starting this lab, confirm your Kubernetes cluster and ArgoCD installation from Day 10 are running and healthy.
+
+> ✅ **Validated environment.** Every command and output in this lab was executed end-to-end on WSL2 (Ubuntu) against a `kind` cluster. Verified versions:
+>
+> | Component | Version |
+> | :--- | :--- |
+> | kind node image | `kindest/node:v1.34.0` |
+> | Kubernetes server | `v1.34.0` |
+> | kubectl client | `v1.34.6` |
+> | ArgoCD server | `v3.5.3` |
+> | argocd CLI | `v3.3.9` |
+>
+> Run every command from your **WSL2 shell**, not PowerShell. `kubectl`, `kind`, `docker`, `helm` and `argocd` must all be on your WSL `PATH`.
+
+### 1. Verify Kubernetes Nodes
+```bash
+kubectl get nodes
+```
+*Actual Output (kind cluster in WSL2):*
+```text
+NAME                                 STATUS   ROLES           AGE   VERSION
+platform-engineering-control-plane   Ready    control-plane   12m   v1.34.0
+```
+
+> 💡 A freshly started `kind` node reports `NotReady` for roughly 30 seconds while the CNI initialises. Block until it is ready instead of guessing:
+> ```bash
+> kubectl wait --for=condition=Ready node --all --timeout=180s
+> ```
+
+### 2. Verify ArgoCD Core Services are Running
+```bash
+kubectl get pods -n argocd
+```
+*Actual Output:* A current ArgoCD install runs **7** pods (the deck's older 5-pod listing predates the applicationset and notifications controllers). All should show `1/1 Running`:
+```text
+NAME                                                READY   STATUS    RESTARTS   AGE
+argocd-application-controller-0                     1/1     Running   0          93s
+argocd-applicationset-controller-7f44d9c8d4-h5nj4   1/1     Running   0          94s
+argocd-dex-server-5c944c746d-d4tld                  1/1     Running   0          93s
+argocd-notifications-controller-5c69d94bb7-vb7mw    1/1     Running   0          93s
+argocd-redis-7bb6c48f9-rvdzz                        1/1     Running   0          93s
+argocd-repo-server-7595c64db4-n7frm                 1/1     Running   0          93s
+argocd-server-78cc97f5df-gr76n                      1/1     Running   0          93s
+```
+
+Wait for them rather than polling by hand:
+```bash
+kubectl -n argocd wait --for=condition=available deployment --all --timeout=600s
+kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=300s
+```
+
+> ⚠️ **If you are installing ArgoCD yourself:** the plain `kubectl apply` in the upstream instructions **fails** on current Kubernetes with:
+> ```text
+> The CustomResourceDefinition "applicationsets.argoproj.io" is invalid:
+> metadata.annotations: Too long: may not be more than 262144 bytes
+> ```
+> The CRD exceeds the annotation size limit that client-side apply relies on. Use server-side apply:
+> ```bash
+> kubectl apply --server-side --force-conflicts -n argocd \
+>   -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+> ```
+> Confirm all three CRDs registered:
+> ```bash
+> kubectl get crd | grep argoproj
+> ```
+> ```text
+> applications.argoproj.io      2026-09-26T15:14:54Z
+> applicationsets.argoproj.io   2026-09-26T15:16:51Z
+> appprojects.argoproj.io       2026-09-26T15:14:55Z
+> ```
+
+### 3. Open ArgoCD Web UI Port-Forward
+Run this in a dedicated WSL terminal window (keep it open during the lab):
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+Now open your browser to **`https://localhost:8080`** (bypass the self-signed SSL warning).  
+- **Username:** `admin`  
+- **Password:** retrieve the generated initial password:
+  ```bash
+  kubectl -n argocd get secret argocd-initial-admin-secret \
+    -o jsonpath="{.data.password}" | base64 -d
+  ```
+
+> 💡 **WSL2 note:** a port-forward started inside WSL2 is reachable from your Windows browser at `localhost` — no extra configuration needed. If you want the port-forward to survive as a background job in the same shell:
+> ```bash
+> nohup kubectl port-forward svc/argocd-server -n argocd 8080:443 > /tmp/pf-argocd.log 2>&1 &
+> ```
+
+### 4. Log In with the ArgoCD CLI
+The lab's `argocd app ...` commands require an authenticated CLI session. This step is easy to miss — without it every `argocd` call fails.
+```bash
+PW=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+argocd login localhost:8080 --username admin --password "$PW" --insecure
+```
+*Actual Output:*
+```text
+'admin:login' logged in successfully
+Context 'localhost:8080' updated
+```
+
+Confirm the CLI is talking to the server (a version skew between CLI and server is normal and harmless):
+```bash
+argocd version --short
+```
+```text
+argocd: v3.3.9+1b1bb48
+argocd-server: v3.5.3
+```
+
+---
+
+## 🚀 Complete Step-by-Step Hands-on Demo
+
+### Step 1: Create Destination Namespace & Project Directory
+
+ArgoCD deploys workloads to destination namespaces. Let's create our project folder and target namespace `guestbook`.
+
+#### Linux / macOS / WSL:
+```bash
+# 1. Create directory structure
+mkdir -p artifacts/section-02/apps/guestbook
+cd artifacts/section-02/apps/guestbook
+
+# 2. Create the target namespace
+kubectl create namespace guestbook
+
+# 3. Verify namespace is active
+kubectl get namespace guestbook
+```
+
+#### Windows PowerShell:
+```powershell
+# 1. Create directory structure
+New-Item -ItemType Directory -Force -Path "artifacts\section-02\apps\guestbook"
+Set-Location -Path "artifacts\section-02\apps\guestbook"
+
+# 2. Create the target namespace
+kubectl create namespace guestbook
+
+# 3. Verify namespace is active
+kubectl get namespace guestbook
+```
+
+*Expected Output:*
+```text
+namespace/guestbook created
+NAME        STATUS   AGE
+guestbook   Active   4s
+```
+
+---
+
+### Step 2: The Application CRD Manifest (`guestbook-app.yaml`)
+
+The `Application` Custom Resource is the foundational building block of ArgoCD. It ties together:
+1. **Where manifests live** (Source Git repository)
+2. **Where they should run** (Destination cluster & namespace)
+3. **How they should be synced** (Sync policy & options)
+
+Save the following complete YAML as `guestbook-app.yaml`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # The project this application belongs to (default provides unrestricted access)
+  project: default
+
+  # Source: Where the desired state lives in Git
+  source:
+    repoURL: https://github.com/argoproj/argocd-example-apps.git
+    targetRevision: HEAD
+    path: guestbook
+
+  # Destination: Where to deploy the resources in Kubernetes
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guestbook
+
+  # Sync policy: Manual sync with automatic namespace creation safeguard
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+```
+
+#### ⚡ Quick 1-Step File Creation (Linux / macOS / WSL):
+```bash
+cat << 'EOF' > guestbook-app.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/argoproj/argocd-example-apps.git
+    targetRevision: HEAD
+    path: guestbook
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guestbook
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+EOF
+```
+
+#### ⚡ Quick 1-Step File Creation (Windows PowerShell):
+```powershell
+@'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: guestbook
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/argoproj/argocd-example-apps.git
+    targetRevision: HEAD
+    path: guestbook
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: guestbook
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+'@ | Out-File -FilePath "guestbook-app.yaml" -Encoding utf8
+```
+
+---
+
+### Step 3: Detailed Breakdown of Every Field
+
+Here is what each section of the manifest does under the hood:
+
+| Field | Value in Lab | Production Explanation |
+| :--- | :--- | :--- |
+| `apiVersion` | `argoproj.io/v1alpha1` | The ArgoCD API group for Application resources. |
+| `kind` | `Application` | The custom resource that ArgoCD's controller watches. |
+| `metadata.name` | `guestbook` | Unique application identifier displayed in the CLI and UI. |
+| `metadata.namespace` | `argocd` | **CRITICAL:** Must be `argocd`. The application controller only monitors its own control-plane namespace. |
+| `metadata.finalizers` | `resources-finalizer.argocd.argoproj.io` | Official cascading deletion hook. When you delete this Application, ArgoCD safely deletes all child pods, services, and deployments instead of leaving orphaned resources. |
+| `spec.project` | `default` | Security boundary. Controls permitted Git repos, destination clusters, and resource whitelists/blacklists. |
+| `spec.source.repoURL` | `https://github.com/argoproj/argocd-example-apps.git` | Git repository containing raw Kubernetes YAMLs, Helm charts, or Kustomize overlays. |
+| `spec.source.targetRevision`| `HEAD` | Git branch (`main`), tag (`v1.4.0`), or commit SHA to track. |
+| `spec.source.path` | `guestbook` | Subdirectory inside the repository containing the manifests. |
+| `spec.destination.server` | `https://kubernetes.default.svc` | In-cluster Kubernetes API server endpoint where ArgoCD is running. |
+| `spec.destination.namespace`| `guestbook` | The target Kubernetes namespace where the application workloads will be deployed. |
+| `spec.syncPolicy.syncOptions`| `CreateNamespace=true` | Built-in safeguard: instructs ArgoCD to automatically create the destination namespace if it does not already exist. |
+
+> 💡 **Notice what is NOT here:** There is no `spec.syncPolicy.automated` block. In Day 11, we intentionally keep sync manual so we can inspect every transition of the reconciliation lifecycle. We automate this in Day 12!
+
+---
+
+### Step 4: Apply the Application CRD
+
+Apply the manifest into your Kubernetes cluster using `kubectl`:
+
+```bash
+kubectl apply -f guestbook-app.yaml
+```
+
+*Expected Output:*
+```text
+application.argoproj.io/guestbook created
+```
+
+---
+
+### Step 5: Inspect Pre-Sync State (Why OutOfSync & Missing is Normal)
+
+Immediately after applying the CRD, ArgoCD connects to Git, renders the manifests, and checks the cluster.
+
+Run the inspection commands:
+
+```bash
+# 1. View status with kubectl
+kubectl get application guestbook -n argocd
+
+# 2. View full details with ArgoCD CLI
+argocd app get guestbook
+```
+
+*Actual Output from `kubectl get application guestbook -n argocd`:*
+```text
+NAME        SYNC STATUS   HEALTH STATUS
+guestbook   OutOfSync     Missing
+```
+
+*Actual Output from `argocd app get guestbook`:*
+```text
+Name:               argocd/guestbook
+Project:            default
+Server:             https://kubernetes.default.svc
+Namespace:          guestbook
+URL:                https://localhost:8080/applications/guestbook
+Source:
+- Repo:             https://github.com/argoproj/argocd-example-apps.git
+  Target:           HEAD
+  Path:             guestbook
+SyncWindow:         Sync Allowed
+Sync Policy:        Manual
+Sync Status:        OutOfSync from HEAD (8088f4c)
+Health Status:      Missing
+
+GROUP  KIND        NAMESPACE  NAME          STATUS     HEALTH   HOOK  MESSAGE
+       Service     guestbook  guestbook-ui  OutOfSync  Missing        
+apps   Deployment  guestbook  guestbook-ui  OutOfSync  Missing        
+```
+
+> 📌 **Read the output carefully — four things differ from older ArgoCD releases:**
+> | Field | Older docs show | Current output |
+> | :--- | :--- | :--- |
+> | `Name` | `guestbook` | `argocd/guestbook` — now namespace-qualified |
+> | `Repo`/`Target`/`Path` | three flat fields | nested under a `Source:` **list** (multi-source support) |
+> | `Sync Policy` | `<none>` | `Manual` |
+> | `SyncWindow` | absent | `Sync Allowed` |
+>
+> The commit SHA (`8088f4c` here) is whatever `HEAD` of the upstream example repo points at on the day you run the lab — yours will differ, and that is fine. Resources are also listed `Service` before `Deployment`.
+
+#### 🔍 Why are these statuses normal?
+- **Sync Status: `OutOfSync` (Yellow Badge):** Git declares that a `Deployment` and a `Service` should exist. But nothing exists in the `guestbook` namespace yet. Desired State $\neq$ Live State.
+- **Health Status: `Missing` (Grey Heart):** Because the Deployment and Service have not been applied to Kubernetes, their health cannot be determined.
+
+Open your browser to `https://localhost:8080`:
+- You will see the **guestbook** card with a yellow badge (`OutOfSync`) and a grey heart (`Missing`).
+
+---
+
+### Step 6: Trigger Manual Sync & Watch Live Reconciliation
+
+Now trigger the sync operation to reconcile Git into the cluster:
+
+```bash
+# Trigger sync. This BLOCKS until the sync operation completes.
+argocd app sync guestbook
+```
+
+> 🛑 **There is no `--watch` flag on `argocd app sync`.** Earlier versions of this lab used `argocd app sync guestbook --watch`, which now fails outright:
+> ```text
+> Error: unknown flag: --watch
+> ```
+> `argocd app sync` **already waits** for the operation to finish — that is the default. The flag you would reach for is the inverse, `--async`, which returns immediately without waiting. `--wait` does not exist either. Verify the real flag list yourself with `argocd app sync --help`.
+
+*Actual Output (trimmed to the tail):*
+```text
+Sync Status:        Synced to HEAD (8088f4c)
+Health Status:      Progressing
+
+Operation:          Sync
+Sync Revision:      8088f4c0d970abb09e250248cc97e35623447cb5
+Phase:              Succeeded
+Start:              2026-09-26 15:18:29 +0000 UTC
+Finished:           2026-09-26 15:18:30 +0000 UTC
+Duration:           1s
+Message:            successfully synced (all tasks run)
+
+GROUP  KIND        NAMESPACE  NAME          STATUS  HEALTH       HOOK  MESSAGE
+       Service     guestbook  guestbook-ui  Synced  Healthy            service/guestbook-ui created
+apps   Deployment  guestbook  guestbook-ui  Synced  Progressing        deployment.apps/guestbook-ui created
+```
+
+Notice the sync itself finished in **1 second**, but health is still `Progressing` — the *sync* succeeded while the Deployment's pods were still starting. Sync completion and health convergence are two separate events.
+
+#### Blocking until the app is actually Healthy
+To wait for health rather than just sync, use the dedicated `wait` subcommand:
+```bash
+argocd app wait guestbook --health --timeout 180
+```
+*Actual Output:*
+```text
+Sync Status:        Synced to HEAD (8088f4c)
+Health Status:      Healthy
+
+GROUP  KIND        NAMESPACE  NAME          STATUS  HEALTH   HOOK  MESSAGE
+       Service     guestbook  guestbook-ui  Synced  Healthy        service/guestbook-ui created
+apps   Deployment  guestbook  guestbook-ui  Synced  Healthy        deployment.apps/guestbook-ui created
+```
+
+Check the final application status:
+```bash
+argocd app get guestbook
+```
+```text
+Sync Status:        Synced to HEAD (8088f4c)
+Health Status:      Healthy
+```
+
+---
+
+### Step 7: Inspect Live Cluster Topology
+
+Verify that the resources were created in the `guestbook` namespace:
+
+```bash
+kubectl get all -n guestbook
+```
+
+*Actual Output:*
+```text
+NAME                                READY   STATUS    RESTARTS   AGE
+pod/guestbook-ui-84774bdc6f-crqd2   1/1     Running   0          113s
+
+NAME                   TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)   AGE
+service/guestbook-ui   ClusterIP   10.96.152.137   <none>        80/TCP    113s
+
+NAME                           READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/guestbook-ui   1/1     1            1           113s
+
+NAME                                      DESIRED   CURRENT   READY   AGE
+replicaset.apps/guestbook-ui-84774bdc6f   1         1         1       113s
+```
+
+> 💡 Your ReplicaSet hash (`84774bdc6f`) and ClusterIP will differ. `kind` allocates from `10.96.0.0/16`, so a `10.96.x.x` service IP is expected here — older minikube-based runs of this lab showed `10.108.x.x`.
+
+#### 🖥️ Explore the ArgoCD Web UI Tree:
+1. Navigate to `https://localhost:8080/applications/guestbook`.
+2. Notice the hierarchical topology tree:
+   ```text
+   guestbook (Application)
+      ├── guestbook-ui (Service) [Port 80/TCP]
+      └── guestbook-ui (Deployment)
+             └── guestbook-ui-6c8d9b4f7d (ReplicaSet)
+                    └── guestbook-ui-6c8d9b4f7d-abc12 (Pod) [1/1 Running]
+   ```
+3. Click on the green **Pod** node &rarr; Click **Logs** to view the container logs directly in your browser!
+4. Click on the **Deployment** node &rarr; Click **Diff** to confirm there is 0% drift between Git and Kubernetes.
+
+---
+
+### Step 8: Test the Live Guestbook Application
+
+Let's test the running web application through our browser:
+
+```bash
+# Forward local port 8081 to guestbook-ui service port 80
+kubectl port-forward -n guestbook svc/guestbook-ui 8081:80
+```
+
+1. Open your browser to **`http://localhost:8081`**.
+2. You will see the **Guestbook** web application!
+3. Type a message (e.g., `"Hello from Platform Engineering Day 11!"`) and click **Submit**.
+4. Once verified, return to your terminal and press `Ctrl+C` to stop the port-forward.
+
+#### ✅ Verify from the WSL terminal instead of the browser
+If you would rather assert this in the shell (and this is what CI would do):
+```bash
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8081
+```
+*Actual Output:*
+```text
+HTTP 200
+```
+```bash
+curl -s http://localhost:8081 | head -5
+```
+```text
+<html ng-app="redis">
+  <head>
+    <title>Guestbook</title>
+    <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.2.12/angular.min.js"></script>
+```
+
+> 💡 The guestbook UI is an AngularJS front end that expects a Redis backend. The upstream `guestbook` path deploys only the front end, so submitted messages will not persist — the `HTTP 200` and rendered page are the success criteria for this lab, not message durability.
+
+---
+
+### Step 9: Drift Detection & Reconciliation Challenge
+
+Now let's simulate a real-world production incident: an engineer bypasses Git and uses imperative `kubectl` to scale the deployment.
+
+#### 1. Manually scale the deployment to 4 replicas:
+```bash
+kubectl scale deployment guestbook-ui --replicas=4 -n guestbook
+```
+
+#### 2. Confirm Kubernetes scaled the pods:
+```bash
+kubectl get pods -n guestbook
+```
+You will now see 4 running pods.
+
+#### 3. Ask ArgoCD to calculate the live drift:
+```bash
+argocd app diff guestbook
+```
+
+*Actual Terminal Diff Output:*
+```diff
+===== apps/Deployment guestbook/guestbook-ui ======
+106c106
+<   replicas: 4
+---
+>   replicas: 1
+```
+
+> 🛑 **Mind the diff direction — earlier versions of this lab had it backwards.** In `argocd app diff`:
+> - `<` is the **live cluster** state → `replicas: 4` (what `kubectl scale` just did)
+> - `>` is the **desired Git** state → `replicas: 1` (what the repo declares)
+>
+> The line number (`106` here) depends on the rendered manifest and will shift as the upstream repo changes; don't treat it as fixed.
+
+> ⚙️ **Useful for CI:** `argocd app diff` **exits non-zero when drift exists**, which the older lab text never mentioned. That makes it usable directly as a drift gate:
+> ```bash
+> argocd app diff guestbook; echo "exit=$?"
+> ```
+> ```text
+> exit=1     # drift present
+> ```
+> After a successful sync the same command prints nothing and returns `exit=0`.
+
+#### 4. Observe the Web UI:
+- Check `https://localhost:8080/applications/guestbook`.
+- The application badge immediately shifts to yellow: **`OutOfSync`**!
+- Git specifies `replicas: 1`, but the cluster is running `replicas: 4`.
+
+#### 5. Re-enforce Git as the Single Source of Truth:
+Tell ArgoCD to reconcile the desired state:
+```bash
+argocd app sync guestbook
+```
+
+#### 6. Confirm Drift is Corrected:
+```bash
+kubectl get pods -n guestbook
+```
+ArgoCD immediately terminates the 3 unauthorized pods, returning the cluster to exactly 1 replica. Git won!
+
+---
+
+### Step 10: Clean Teardown & Finalizer Verification
+
+In Step 2, we included the finalizer `resources-finalizer.argocd.argoproj.io`. Let's test how clean cascading deletion works:
+
+```bash
+# 1. Delete the Application CRD
+kubectl delete -f guestbook-app.yaml
+
+# 2. Check if child resources were automatically cleaned up
+kubectl get all -n guestbook
+```
+
+*Actual Output:*
+```text
+application.argoproj.io "guestbook" deleted from argocd namespace
+No resources found in guestbook namespace.
+```
+Because of the finalizer, deleting the Application CRD automatically deleted the child Deployment, ReplicaSet, Pods, and Service — measured at **~2.8 seconds** for this app.
+
+> 💡 Current `kubectl` phrases the confirmation as `deleted from argocd namespace`; older releases printed just `deleted`. Both mean the same thing.
+
+```bash
+# Optional: delete the guestbook namespace if desired
+kubectl delete namespace guestbook
+```
+```text
+namespace "guestbook" deleted
+```
+
+> ⚠️ **Heads-up before Day 12.** This teardown removes both the Application *and* the namespace. Day 12 re-creates them from `guestbook-app-auto.yaml`, whose `CreateNamespace=true` sync option restores the namespace automatically — so running Day 12 straight after this teardown works. Just don't be surprised when Day 12's pre-flight `argocd app get guestbook` reports the app as missing: that is the expected state at that point.
+
+---
+
+## 🚨 Self-Service Troubleshooting Clinic
+
+If you encounter any roadblock, match your error below for the exact 1-liner fix:
+
+### 1. Error: `namespaces "guestbook" not found`
+* **Root Cause:** You applied the CRD before creating the `guestbook` namespace, or omitted `CreateNamespace=true`.
+* **Instant Fix:**
+  ```bash
+  kubectl create namespace guestbook
+  argocd app sync guestbook
+  ```
+
+### 2. Error: `connect: connection refused` on `localhost:8080`
+* **Root Cause:** The port-forward process stopped or your terminal session ended.
+* **Instant Fix:**
+  ```bash
+  kubectl port-forward svc/argocd-server -n argocd 8080:443
+  ```
+
+### 3. Error: `kubectl apply` succeeded, but `argocd app list` shows nothing
+* **Root Cause:** You applied `guestbook-app.yaml` into the wrong namespace (such as `default` or `guestbook`). ArgoCD only monitors the namespace where its controller is running (`argocd`).
+* **Diagnosis:**
+  ```bash
+  kubectl get applications -A
+  ```
+* **Instant Fix:**
+  ```bash
+  kubectl delete application guestbook --all-namespaces
+  kubectl apply -n argocd -f guestbook-app.yaml
+  ```
+
+### 4. Error: `ComparisonError: repository not accessible: authentication required`
+* **Root Cause:** Typo in the `repoURL` field or pointing to a private repo without credentials.
+* **Instant Fix:** Ensure `spec.source.repoURL` is exactly `https://github.com/argoproj/argocd-example-apps.git`. Then refresh:
+  ```bash
+  argocd app get guestbook --refresh
+  ```
+
+### 5. Error: Application is `Synced` but `Degraded`
+* **Root Cause:** Manifests were successfully sent to Kubernetes, but the pods cannot start (e.g. `CrashLoopBackOff` or `ImagePullBackOff`).
+* **Diagnosis Commands:**
+  ```bash
+  kubectl describe pod -l app=guestbook-ui -n guestbook
+  kubectl logs -l app=guestbook-ui -n guestbook
+  ```
+
+### 6. Error: `Error: unknown flag: --watch` (or `--wait`)
+* **Root Cause:** Neither flag exists on `argocd app sync`. `sync` already blocks until the operation finishes.
+* **Instant Fix:** Drop the flag. To also wait for *health*, chain the `wait` subcommand:
+  ```bash
+  argocd app sync guestbook
+  argocd app wait guestbook --health --timeout 180
+  ```
+
+### 7. Error: `argocd app refresh` prints the help text and exits 1
+* **Root Cause:** `refresh` is **not** an `argocd app` subcommand — it is a flag on `get`.
+* **Instant Fix:**
+  ```bash
+  argocd app get guestbook --refresh        # re-reads Git, uses cached manifests
+  argocd app get guestbook --hard-refresh   # also discards the manifest cache
+  ```
+
+### 8. Error: every `argocd` command fails with a connection or auth error
+* **Root Cause:** The CLI has no authenticated session, or the port-forward died.
+* **Diagnosis:**
+  ```bash
+  argocd version --short     # server line missing means no session
+  ```
+* **Instant Fix:** restart the port-forward, then log in again (see Pre-Flight step 4):
+  ```bash
+  kubectl port-forward svc/argocd-server -n argocd 8080:443 &
+  PW=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+  argocd login localhost:8080 --username admin --password "$PW" --insecure
+  ```
+
+### 9. Warning: `prefer a domain-qualified finalizer name including a path (/)`
+* **Root Cause:** Kubernetes 1.34+ emits this advisory for the official ArgoCD finalizer `resources-finalizer.argocd.argoproj.io`.
+* **Fix:** **None required.** It is a warning, not an error — the apply succeeds and cascading deletion works normally. Do not rename the finalizer; ArgoCD looks for that exact string.
+
+---
+
+## 📝 Quick Reference Command Cheat Sheet
+
+Keep these commands handy during your GitOps workflows:
+
+```bash
+# Cluster & Pre-flight (run all of these in WSL2)
+kubectl get nodes
+kubectl wait --for=condition=Ready node --all --timeout=180s
+kubectl get pods -n argocd
+kubectl -n argocd wait --for=condition=available deployment --all --timeout=600s
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
+# CLI authentication (required before any argocd command)
+PW=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
+argocd login localhost:8080 --username admin --password "$PW" --insecure
+argocd version --short
+
+# Application Management
+kubectl apply -f guestbook-app.yaml
+kubectl get application guestbook -n argocd
+argocd app get guestbook
+argocd app list
+
+# Sync Operations  (NOTE: no --watch and no --wait flag exists on sync)
+argocd app sync guestbook                      # blocks until sync completes
+argocd app sync guestbook --async              # return immediately, don't wait
+argocd app wait guestbook --health             # block until Healthy
+argocd app sync guestbook --dry-run            # preview without applying
+
+# Drift Detection & Refresh  (NOTE: 'argocd app refresh' is NOT a subcommand)
+argocd app diff guestbook                      # exits 1 when drift exists
+argocd app get guestbook --refresh             # re-read Git
+argocd app get guestbook --hard-refresh        # re-read Git, bust manifest cache
+
+# Application Workloads
+kubectl get all -n guestbook
+kubectl port-forward -n guestbook svc/guestbook-ui 8081:80
+curl -s -o /dev/null -w "HTTP %{http_code}\n" http://localhost:8081
+kubectl scale deployment guestbook-ui --replicas=4 -n guestbook
+
+# Cleanup
+kubectl delete -f guestbook-app.yaml
+kubectl delete namespace guestbook
+```
+
+---
+
+## 📦 Deliverable & Evidence Submission
+
+To complete Day 11 and record your progress:
+1. Ensure your manifest is saved at `artifacts/section-02/apps/guestbook/guestbook-app.yaml`.
+2. Open [`demo.html`](demo.html) in your browser.
+3. Fill in your observations in the **Evidence Generator** form (Sync Status, Health Status, Drift observation).
+4. Click **⬇️ Download .md** to save your `day-11-evidence.md`.
+5. Stage and commit your work:
+   ```bash
+   git add artifacts/section-02/apps/guestbook/guestbook-app.yaml
+   git commit -m "feat(day11): complete first application sync and reconciliation lifecycle lab"
+   ```
+
+---
+*Ready for Day 12? In the next module, we will activate **Automated Sync**, enable **Self-Healing**, and configure **Resource Pruning**!*
