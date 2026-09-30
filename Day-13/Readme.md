@@ -3,10 +3,7 @@
 > **Course:** Platform Engineering Masterclass — GitOps with ArgoCD  
 > **Section:** Section 02 — ArgoCD Foundations  
 > **Day:** Day 13 — Git Source Patterns (Raw YAML, Helm Packaging, Kustomize Overlays, Multiple Sources)  
-> **Estimated Time:** 35–45 minutes  
-> **Companion Interactive Tool:** Open [`demo.html`](demo.html) in your browser for 1-click terminal commands and real-time evidence generation.  
-> **Presentation Deck:** Open [`presentation.html`](presentation.html) for slide visuals.  
-> **Spoken Transcript:** Read [`TRANSCRIPT.md`](TRANSCRIPT.md) or open [`transcript.html`](transcript.html).
+
 
 ---
 
