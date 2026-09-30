@@ -10,26 +10,6 @@
 
 ---
 
-## 🧭 How to Follow Along with the Video
-
-This course uses a hands-on, pause-and-execute cadence. Follow this timeline while watching the Day 12 video lecture:
-
-| Video Segment | Topic / Slide | Student Action |
-| :--- | :--- | :--- |
-| **00:00 – 01:15** | Slide 1: Welcome & Overview | Understand why manual sync does not scale in enterprise environments. |
-| **01:15 – 02:30** | Slide 2: The Core Concept | Grasp the 3 independent switches: Auto-Sync, Prune, and Self-Heal. |
-| **02:30 – 04:00** | Slide 3: The 4 Sync Policy Levels | Review the progressive automation levels from Manual to Full GitOps. |
-| **04:00 – 05:15** | Slide 4: Policy Comparison Matrix | ⏸️ **PAUSE VIDEO** &rarr; Complete **Step 1 & Step 2** (author `guestbook-app-auto.yaml`). |
-| **05:15 – 06:45** | Slide 5: Lab 1 — Enable Auto-Sync | ⏸️ **PAUSE VIDEO** &rarr; Complete **Step 3** (apply CRD and verify `Sync Policy: Automated`). |
-| **06:45 – 08:15** | Slide 6: Lab 2 — Live Self-Healing Test | ⏸️ **PAUSE VIDEO** &rarr; Complete **Step 4** (scale to 5 pods and watch ArgoCD self-heal back to 1). |
-| **08:15 – 09:30** | Slide 7: Lab 3 — Resource Pruning Test | ⏸️ **PAUSE VIDEO** &rarr; Complete **Step 5** (delete service and watch ArgoCD auto-recreate it). |
-| **09:30 – 10:45** | Slide 8: Deep Dive — Sync Options | Review production sync options (`PruneLast`, `ApplyOutOfSyncOnly`). |
-| **10:45 – 11:45** | Slide 9: Deep Dive — Retry Strategy | Understand exponential backoff and webhook tolerance. |
-| **11:45 – 12:45** | Slide 10: The Hotfix Dilemma | Learn why `kubectl edit` in production is a fatal trap. |
-| **12:45 – 14:30** | Slide 11–12: Culture & Wrap-Up | Complete **Step 6 & Step 7** (evidence generation in `demo.html`). |
-
----
-
 ## 🎯 What You Will Learn & Why It Matters
 
 ### The Operational Challenge
