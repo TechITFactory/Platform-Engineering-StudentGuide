@@ -3,10 +3,7 @@
 > **Course:** Platform Engineering Masterclass — GitOps with ArgoCD  
 > **Section:** Section 02 — ArgoCD Foundations  
 > **Day:** Day 12 — Sync Policies & Automation (Auto-Sync, Prune, Self-Heal)  
-> **Estimated Time:** 25–35 minutes  
-> **Companion Interactive Tool:** Open [`demo.html`](demo.html) in your browser for 1-click terminal commands and real-time evidence generation.  
-> **Presentation Deck:** Open [`presentation.html`](presentation.html) for slide visuals.  
-> **Spoken Transcript:** Read [`TRANSCRIPT.md`](TRANSCRIPT.md) or open [`transcript.html`](transcript.html).
+
 
 ---
 
